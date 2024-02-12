@@ -1,199 +1,176 @@
-import { addInViewAnimationToSingleElement } from '../../utils/helpers.js';
+import createTag from './tag.js';
 
-function createSelect(fd) {
-    const select = document.createElement('select');
-    select.id = fd.Field;
-    if (fd.Placeholder) {
-        const ph = document.createElement('option');
-        ph.textContent = fd.Placeholder;
-        ph.setAttribute('selected', '');
-        ph.setAttribute('disabled', '');
-        select.append(ph);
+/**
+ * * @param {HTMLElement} element the element with the parent undesired wrapper, like <p></p>
+ * * @param {targetSelector} string selector of the target element
+ * result: removed the undesired wrapper
+ */
+export function removeOuterElementLayer(element, targetSelector) {
+    const targetElement = element.querySelector(targetSelector);
+    if (targetElement) {
+        const parent = targetElement.parentNode;
+        if (parent) (parent).replaceWith(targetElement);
     }
-    fd.Options.split(',').forEach((o) => {
-        const option = document.createElement('option');
-        option.textContent = o.trim();
-        option.value = o.trim();
-        select.append(option);
-    });
-    if (fd.Mandatory === 'x') {
-        select.setAttribute('required', 'required');
-    }
-    return select;
 }
 
-function constructPayload(form) {
-    const payload = {};
-    [...form.elements].forEach((fe) => {
-        if (fe.type === 'checkbox') {
-            if (fe.checked) payload[fe.id] = fe.value;
-        } else if (fe.id) {
-            payload[fe.id] = fe.value;
+/**
+ * * @param {HTMLElement} element the elemen/block with mutilple child
+ * * that you want to combine that into single div only
+ * result: single div with all children elements
+ * e.g. input: <div class="wrapper">
+ * *            <div class="unwanted-wrapper-one"> <p/> </div>
+ * *            <div class="unwanted-wrapper-two"> <br/> </div>
+ * *           </div>
+ * * output: <div class="wrapper">
+ * *            <div>
+ * *                <p/> <br/>
+ * *            </div>
+ * *         </div>
+ */
+export function combineChildrenToSingleDiv(element) {
+    const targetChildren = element.querySelectorAll(':scope > div');
+    if (targetChildren.length === 0) { return; }
+
+    const singleDiv = document.createElement('div');
+    targetChildren.forEach((targetChild) => {
+        const children = Array.from(targetChild.childNodes);
+        children.forEach((childElement) => {
+            singleDiv.appendChild(childElement);
+        });
+        targetChild.remove();
+    });
+
+    element.append(singleDiv);
+}
+
+/**
+ * * @param {HTMLElement} element
+ * * @param {string} targetTag, like 'ul' or 'div'
+ * * @param {string} className
+ * result: return the new element with inner content of the element, desired tag and css class
+ */
+export function changeTag(element, targetTag, className) {
+    const newElClass = className || '';
+    const innerContent = element.innerHTML;
+    const newTagElement = createTag(targetTag, { class: newElClass }, innerContent);
+
+    return newTagElement;
+}
+
+/**
+ * * @param {string} url the href of a link element
+ * result: return `_self` or `_blank` if the link has the same host
+ */
+export function returnLinkTarget(url) {
+    const currentHost = window.location.host;
+    const urlObject = new URL(url);
+    const isSameHost = urlObject.host === currentHost;
+
+    // take in pathname that should be opened in new tab, in redirects excel
+    const redirectExternalPaths = ['/history', '/chat'];
+    const redirectToExternalPath = redirectExternalPaths.includes(urlObject.pathname);
+
+    if (!isSameHost || redirectToExternalPath) {
+        return '_blank';
+    }
+    return '_self';
+}
+
+// as the blocks are loaded in aysnchronously, we don't have a specific timing
+// that the all blocks are loaded -> cannot use a single observer to
+// observe all blocks, so use functions here in blocks instead
+// eslint-disable-next-line max-len
+const requireRevealWrapper = ['slide-reveal-up', 'slide-reveal-up-slow'];
+
+export function addRevealWrapperToAnimationTarget(element) {
+    const revealWrapper = createTag('div', { class: 'slide-reveal-wrapper' });
+    const parent = element.parentNode;
+    // Insert the wrapper before the element
+    parent.insertBefore(revealWrapper, element);
+    revealWrapper.appendChild(element);
+}
+
+// eslint-disable-next-line max-len
+export function addAnimatedClassToElement(targetSelector, animatedClass, delayTime, targetSelectorWrapper) {
+    const target = targetSelectorWrapper.querySelector(targetSelector);
+    if (target) {
+        target.classList.add(animatedClass);
+        if (delayTime) target.style.transitionDelay = `${delayTime}s`;
+        if (requireRevealWrapper.indexOf(animatedClass) !== -1) {
+            addRevealWrapperToAnimationTarget(target);
         }
-    });
-    return payload;
+    }
 }
 
-async function submitForm(form) {
-    const payload = constructPayload(form);
-    payload.timestamp = new Date().toJSON();
-    const resp = await fetch(form.dataset.action, {
-        method: 'POST',
-        cache: 'no-cache',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ data: payload }),
-    });
-    await resp.text();
-    return payload;
-}
-
-function createButton(fd) {
-    const button = document.createElement('button');
-    button.textContent = fd.Label;
-    button.classList.add('button');
-    if (fd.Type === 'submit') {
-        button.addEventListener('click', async (event) => {
-            const form = button.closest('form');
-            if (fd.Placeholder) form.dataset.action = fd.Placeholder;
-            if (form.checkValidity()) {
-                event.preventDefault();
-                button.setAttribute('disabled', '');
-                await submitForm(form);
-                const redirectTo = fd.Extra;
-                window.location.href = redirectTo;
+// eslint-disable-next-line max-len
+export function addAnimatedClassToMultipleElements(targetSelector, animatedClass, delayTime, targetSelectorWrapper, staggerTime) {
+    const targets = targetSelectorWrapper.querySelectorAll(targetSelector);
+    if (targets) {
+        targets.forEach((target, i) => {
+            target.classList.add(animatedClass);
+            if (delayTime) target.style.transitionDelay = `${delayTime * (i + 1)}s`;
+            if (staggerTime) target.style.transitionDelay = `${delayTime + staggerTime * (i + 1)}s`;
+            if (requireRevealWrapper.indexOf(animatedClass) !== -1) {
+                addRevealWrapperToAnimationTarget(target);
             }
         });
     }
-    return button;
 }
 
-function createHeading(fd, el) {
-    const heading = document.createElement(el);
-    heading.textContent = fd.Label;
-    return heading;
-}
-
-function createInput(fd) {
-    const input = document.createElement('input');
-    input.type = fd.Type;
-    input.id = fd.Field;
-    input.setAttribute('placeholder', fd.Placeholder);
-    if (fd.Mandatory === 'x') {
-        input.setAttribute('required', 'required');
-    }
-    return input;
-}
-
-function createTextArea(fd) {
-    const input = document.createElement('textarea');
-    input.id = fd.Field;
-    input.setAttribute('placeholder', fd.Placeholder);
-    if (fd.Mandatory === 'x') {
-        input.setAttribute('required', 'required');
-    }
-    return input;
-}
-
-function createLabel(fd) {
-    const label = document.createElement('label');
-    label.setAttribute('for', fd.Field);
-    label.textContent = fd.Label;
-    if (fd.Mandatory === 'x') {
-        label.classList.add('required');
-    }
-    return label;
-}
-
-function applyRules(form, rules) {
-    const payload = constructPayload(form);
-    rules.forEach((field) => {
-        const { type, condition: { key, operator, value } } = field.rule;
-        if (type === 'visible') {
-            if (operator === 'eq') {
-                if (payload[key] === value) {
-                    form.querySelector(`.${field.fieldId}`).classList.remove('hidden');
-                } else {
-                    form.querySelector(`.${field.fieldId}`).classList.add('hidden');
-                }
+export function addInviewObserverToTriggerElement(triggerElement) {
+    const observerOptions = {
+        threshold: 0.25, // show when is 25% in view
+    };
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('in-view');
+                observer.unobserve(entry.target);
             }
+        });
+    }, observerOptions);
+    observer.observe(triggerElement);
+}
+
+// eslint-disable-next-line max-len
+export function addInViewAnimationToSingleElement(targetElement, animatedClass, triggerElement, delayTime) {
+    // if it's HTML element
+    if (targetElement.nodeType === 1) {
+        targetElement.classList.add(animatedClass);
+        if (requireRevealWrapper.indexOf(animatedClass) !== -1) {
+            addRevealWrapperToAnimationTarget(targetElement);
+        }
+    }
+    // if it's string only, which should be a selector
+    if (targetElement.nodeType === 3) {
+        addAnimatedClassToElement(targetElement, animatedClass, triggerElement, delayTime);
+    }
+    const trigger = triggerElement || targetElement;
+    addInviewObserverToTriggerElement(trigger);
+}
+
+export function addInViewAnimationToMultipleElements(animatedItems, triggerElement, staggerTime) {
+    // set up animation class
+    animatedItems.forEach((el, i) => {
+        const delayTime = staggerTime ? i * staggerTime : null;
+        if (Object.prototype.hasOwnProperty.call(el, 'selector')) {
+            addAnimatedClassToElement(el.selector, el.animatedClass, delayTime, triggerElement);
+        }
+        if (Object.prototype.hasOwnProperty.call(el, 'selectors')) {
+            // eslint-disable-next-line max-len
+            addAnimatedClassToMultipleElements(el.selectors, el.animatedClass, el.staggerTime, triggerElement);
         }
     });
+
+    // add `.in-view` to triggerElement, so the elements inside will start animating
+    addInviewObserverToTriggerElement(triggerElement);
 }
 
-function fill(form) {
-    const { action } = form.dataset;
-    if (action === '/tools/bot/register-form') {
-        const loc = new URL(window.location.href);
-        form.querySelector('#owner').value = loc.searchParams.get('owner') || '';
-        form.querySelector('#installationId').value = loc.searchParams.get('id') || '';
-    }
-}
-
-export async function createForm(formURL) {
-    const { pathname } = new URL(formURL);
-    const resp = await fetch(pathname);
-    const json = await resp.json();
-    const form = document.createElement('form');
-    const rules = [];
-    // eslint-disable-next-line prefer-destructuring
-    form.dataset.action = pathname.split('.json')[0];
-    json.data.forEach((fd) => {
-        fd.Type = fd.Type || 'text';
-        const fieldWrapper = document.createElement('div');
-        const style = fd.Style ? ` form-${fd.Style}` : '';
-        const fieldId = `form-${fd.Type}-wrapper${style}`;
-        fieldWrapper.className = fieldId;
-        fieldWrapper.classList.add('field-wrapper');
-        switch (fd.Type) {
-            case 'select':
-                fieldWrapper.append(createLabel(fd));
-                fieldWrapper.append(createSelect(fd));
-                break;
-            case 'heading':
-                fieldWrapper.append(createHeading(fd, 'h3'));
-                break;
-            case 'legal':
-                fieldWrapper.append(createHeading(fd, 'p'));
-                break;
-            case 'checkbox':
-                fieldWrapper.append(createInput(fd));
-                fieldWrapper.append(createLabel(fd));
-                break;
-            case 'text-area':
-                fieldWrapper.append(createLabel(fd));
-                fieldWrapper.append(createTextArea(fd));
-                break;
-            case 'submit':
-                fieldWrapper.append(createButton(fd));
-                break;
-            default:
-                fieldWrapper.append(createLabel(fd));
-                fieldWrapper.append(createInput(fd));
-        }
-
-        if (fd.Rules) {
-            try {
-                rules.push({ fieldId, rule: JSON.parse(fd.Rules) });
-            } catch (e) {
-                // eslint-disable-next-line no-console
-                console.warn(`Invalid Rule ${fd.Rules}: ${e}`);
-            }
-        }
-        form.append(fieldWrapper);
-    });
-
-    form.addEventListener('change', () => applyRules(form, rules));
-    applyRules(form, rules);
-    fill(form);
-    return (form);
-}
-
-export default async function decorate(block) {
-    const form = block.querySelector('a[href$=".json"]');
-    addInViewAnimationToSingleElement(block, 'fade-up');
-    if (form) {
-        form.replaceWith(await createForm(form.href));
-    }
-}
+export default {
+    removeOuterElementLayer,
+    changeTag,
+    returnLinkTarget,
+    addInViewAnimationToSingleElement,
+    addInViewAnimationToMultipleElements,
+    addInviewObserverToTriggerElement,
+};
